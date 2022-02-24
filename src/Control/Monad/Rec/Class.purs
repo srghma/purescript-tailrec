@@ -100,7 +100,7 @@ instance monadRecIdentity :: MonadRec Identity where
 instance monadRecEffect :: MonadRec Effect where
   tailRecM f a = do
     r <- Ref.new =<< f a
-    untilE do
+    untilE do -- exec given effects and write results to `r`, until `true`
       Ref.read r >>= case _ of
         Loop a' -> do
           e <- f a'
@@ -113,6 +113,8 @@ instance monadRecEffect :: MonadRec Effect where
     fromDone = unsafePartial \(Done b) -> b
 
 instance monadRecFunction :: MonadRec ((->) e) where
+  -- tailRecM :: forall a b. (a -> m (Step a b)) -> a -> m b
+  -- tailRecM :: forall a b. (a -> e -> Step a b) -> a -> e -> b
   tailRecM f a0 e = tailRec (\a -> f a e) a0
 
 instance monadRecEither :: MonadRec (Either e) where
@@ -141,13 +143,15 @@ instance monadRecMaybe :: MonadRec Maybe where
 -- | ```
 forever :: forall m a b. MonadRec m => m a -> m b
 forever ma = tailRecM (\u -> Loop u <$ ma) unit
+-- forever effect = tailRecM (\_ -> Loop unit <$ effect) unit -- tailRecM f a
 
 -- | While supplied computation evaluates to `Just _`, it will be
 -- | executed repeatedly and results will be combined using monoid instance.
-whileJust :: forall a m. Monoid a => MonadRec m => m (Maybe a) -> m a
-whileJust m = mempty # tailRecM \v -> m <#> case _ of
-  Nothing -> Done v
-  Just x -> Loop $ v <> x
+whileJustCombine :: forall a m. Monoid a => MonadRec m => m (Maybe a) -> m a
+whileJustCombine m = mempty # tailRecM \acc -> m <#> case _ of
+  Nothing -> Done acc
+  Just x -> Loop $ acc <> x
+-- tailRecM func mempty
 
 -- | Supplied computation will be executed repeatedly until it evaluates
 -- | to `Just value` and then that `value` will be returned.
